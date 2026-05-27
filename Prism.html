@@ -1,0 +1,1702 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Glass Form Studio</title>
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=Geist:wght@500;600;700&family=Instrument+Serif:ital@0;1&family=JetBrains+Mono:wght@300;400;500&family=Hanken+Grotesk:wght@300;400;500;600&display=swap" rel="stylesheet" />
+<style>
+  :root {
+    --bg: #f4f5f8;
+    --panel: rgba(255, 255, 255, 0.85);
+    --panel-border: rgba(0, 0, 0, 0.06);
+    --text: #1a1a1f;
+    --text-dim: #6a6a73;
+    --text-faint: #a4a4ad;
+    --accent: #2c6fd1;
+    --accent-dim: rgba(44, 111, 209, 0.12);
+    --divider: rgba(0, 0, 0, 0.06);
+    --hover: rgba(0, 0, 0, 0.03);
+    --active: rgba(0, 0, 0, 0.06);
+    --stage-bg: #fafbfd;
+    --range-track: rgba(0, 0, 0, 0.1);
+  }
+  /* Dark theme — token-only override. Every UI element pulls from
+     these vars, so flipping data-theme on <html> retints the whole
+     interface without component-level changes. The 3D scene's own
+     background (Light/Dark/None radio in the Background section) is
+     intentionally independent — that affects the render, this affects
+     the UI chrome. */
+  [data-theme="dark"] {
+    --bg: #0e0f12;
+    --panel: rgba(20, 22, 26, 0.85);
+    --panel-border: rgba(255, 255, 255, 0.08);
+    --text: #ececf0;
+    --text-dim: #9a9aa3;
+    --text-faint: #5a5a63;
+    --accent: #5aa3ff;
+    --accent-dim: rgba(90, 163, 255, 0.18);
+    --divider: rgba(255, 255, 255, 0.08);
+    --hover: rgba(255, 255, 255, 0.04);
+    --active: rgba(255, 255, 255, 0.08);
+    --stage-bg: #15171b;
+    --range-track: rgba(255, 255, 255, 0.12);
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; -webkit-font-smoothing: antialiased; }
+  html, body { height: 100%; background: var(--bg); color: var(--text); font-family: 'Hanken Grotesk', sans-serif; overflow: hidden; }
+  #app { position: fixed; inset: 0; display: flex; }
+  #stage { flex: 1; position: relative; cursor: grab; min-width: 0; background: var(--stage-bg); }
+  /* "None" background mode — subtle checkerboard so the user can see
+     transparency. Tokens make it theme-aware: dark theme gets a darker
+     checker. The pattern is constructed in two layers — base color +
+     overlay diamonds — so we don't have to recompute the conic-gradient
+     each theme swap. */
+  #stage.stage-transparent {
+    background:
+      linear-gradient(45deg, var(--divider) 25%, transparent 25%) 0 0/20px 20px,
+      linear-gradient(-45deg, var(--divider) 25%, transparent 25%) 0 10px/20px 20px,
+      var(--stage-bg);
+  }
+  #stage:active { cursor: grabbing; }
+  #canvas { width: 100%; height: 100%; display: block; }
+  .actions { position: absolute; top: 24px; right: 24px; z-index: 10; display: flex; gap: 8px; }
+  .icon-btn {
+    background: var(--panel); backdrop-filter: blur(20px); -webkit-backdrop-filter: blur(20px);
+    border: 1px solid var(--panel-border); color: var(--text);
+    width: 38px; height: 38px; border-radius: 10px;
+    display: flex; align-items: center; justify-content: center;
+    cursor: pointer; transition: all 0.2s ease;
+  }
+  .icon-btn:hover { background: var(--active); border-color: var(--panel-border); }
+  .icon-btn svg { width: 16px; height: 16px; stroke: currentColor; fill: none; stroke-width: 1.5; }
+  /* Theme toggle icon swap. Light theme shows moon ("switch to dark"),
+     dark theme shows sun ("switch to light"). The unused icon is
+     hidden via display:none so it doesn't affect button layout. */
+  .theme-icon-sun { display: none; }
+  [data-theme="dark"] .theme-icon-sun { display: inline; }
+  [data-theme="dark"] .theme-icon-moon { display: none; }
+  .primary {
+    background: var(--text); color: var(--bg); border: 1px solid var(--text);
+    padding: 0 16px; height: 38px; border-radius: 10px;
+    font-family: 'Hanken Grotesk', sans-serif; font-weight: 500; font-size: 13px; letter-spacing: 0.01em;
+    cursor: pointer; display: flex; align-items: center; gap: 8px; transition: all 0.2s ease;
+  }
+  .primary:hover { background: var(--accent); color: #fff; border-color: var(--accent); }
+  .primary svg { width: 14px; height: 14px; stroke: currentColor; fill: none; stroke-width: 2; }
+  .export-wrap { position: relative; }
+  .export-menu {
+    position: absolute; top: calc(100% + 6px); right: 0;
+    background: rgba(255, 255, 255, 0.96);
+    backdrop-filter: blur(20px); -webkit-backdrop-filter: blur(20px);
+    border: 1px solid var(--panel-border);
+    border-radius: 10px;
+    padding: 6px;
+    min-width: 220px;
+    box-shadow: 0 8px 32px rgba(0,0,0,0.08);
+    opacity: 0; pointer-events: none;
+    transform: translateY(-4px);
+    transition: opacity 0.15s ease, transform 0.15s ease;
+    z-index: 30;
+  }
+  .export-wrap.open .export-menu {
+    opacity: 1; pointer-events: auto; transform: translateY(0);
+  }
+  .export-menu-section {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 9px;
+    letter-spacing: 0.16em;
+    text-transform: uppercase;
+    color: var(--text-faint);
+    padding: 8px 10px 4px;
+  }
+  .export-menu button {
+    display: block; width: 100%; text-align: left;
+    background: none; border: none;
+    padding: 8px 10px;
+    border-radius: 6px;
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 11px;
+    color: var(--text);
+    cursor: pointer;
+    transition: background 0.12s ease;
+  }
+  .export-menu button:hover { background: var(--hover); }
+  .export-menu button.active { background: var(--accent-dim); color: var(--accent); }
+  .status {
+    position: absolute; bottom: 24px; left: 24px; z-index: 10;
+    font-family: 'JetBrains Mono', monospace; font-size: 10px; letter-spacing: 0.12em; text-transform: uppercase;
+    color: var(--text-faint); pointer-events: none; display: flex; gap: 18px;
+  }
+  .status span b { color: var(--text-dim); font-weight: 400; margin-right: 6px; }
+  .hint {
+    position: absolute; bottom: 24px; right: 24px; z-index: 10;
+    font-family: 'JetBrains Mono', monospace; font-size: 10px; letter-spacing: 0.12em; text-transform: uppercase;
+    color: var(--text-faint); pointer-events: none;
+  }
+  .panel {
+    width: 320px; background: var(--panel);
+    backdrop-filter: blur(24px); -webkit-backdrop-filter: blur(24px);
+    overflow-y: auto; padding: 28px 24px 32px; z-index: 5;
+    flex-shrink: 0;
+  }
+  .panel-left  { border-right: 1px solid var(--panel-border); }
+  .panel-right { border-left:  1px solid var(--panel-border); }
+  .panel-brand {
+    /* Logo unit at the top of the left panel — just the glass tile,
+       which contains the wordmark inside it. Bottom border separates
+       the logo from the first section below. */
+    padding-bottom: 22px;
+    margin-bottom: 30px;
+    border-bottom: 1px solid var(--panel-border);
+    display: flex; align-items: center;
+  }
+  .panel-brand .brandmark {
+    /* Single tilted glass plate. Sized to align visually with the
+       cap-height of the wordmark. */
+    width: 38px; height: 30px; flex-shrink: 0;
+  }
+  .panel-brand .wordmark {
+    /* Italic serif wordmark — Instrument Serif italic, matches the
+       reference image. */
+    font-family: 'Instrument Serif', serif;
+    font-style: italic;
+    font-size: 28px;
+    letter-spacing: -0.01em;
+    color: var(--text);
+  }
+  .panel-brand .wordmark .dot { color: var(--accent); font-style: normal; }
+  .panel-brand .tag { font-family: 'JetBrains Mono', monospace; font-size: 10px; letter-spacing: 0.18em; text-transform: uppercase; color: var(--text-faint); padding-top: 6px; }
+  .panel::-webkit-scrollbar { width: 4px; }
+  .panel::-webkit-scrollbar-track { background: transparent; }
+  .panel::-webkit-scrollbar-thumb { background: var(--range-track); border-radius: 2px; }
+  .section { margin-bottom: 26px; }
+  .section:last-child { margin-bottom: 0; }
+  .section-title {
+    font-family: 'JetBrains Mono', monospace; font-size: 10px; letter-spacing: 0.18em; text-transform: uppercase;
+    color: var(--text-faint); margin-bottom: 12px;
+    display: flex; align-items: center; justify-content: space-between;
+  }
+  .opt-grid { display: grid; grid-template-columns: repeat(5, 1fr); gap: 6px; }
+  .opt {
+    aspect-ratio: 1; background: var(--hover);
+    border: 1px solid transparent; border-radius: 8px;
+    cursor: pointer; display: flex; align-items: center; justify-content: center;
+    transition: all 0.15s ease; color: var(--text-dim);
+  }
+  .opt:hover { background: var(--active); color: var(--text); }
+  .opt.active { background: var(--accent-dim); border-color: var(--accent); color: var(--accent); }
+  .opt svg { width: 20px; height: 20px; stroke: currentColor; fill: none; stroke-width: 1.4; }
+  .opt-labels { display: grid; grid-template-columns: repeat(5, 1fr); gap: 6px; margin-top: 6px; }
+  .opt-labels span {
+    font-family: 'JetBrains Mono', monospace; font-size: 8px; letter-spacing: 0.08em; text-transform: uppercase;
+    text-align: center; color: var(--text-faint);
+  }
+  .opt-labels span.active { color: var(--accent); }
+  .slider-row { margin-bottom: 14px; }
+  .slider-row:last-child { margin-bottom: 0; }
+  .slider-head { display: flex; justify-content: space-between; align-items: baseline; margin-bottom: 8px; }
+  .slider-label { font-size: 13px; color: var(--text); font-weight: 400; }
+  .slider-val { font-family: 'JetBrains Mono', monospace; font-size: 11px; color: var(--text-dim); }
+  input[type=range] {
+    -webkit-appearance: none; appearance: none;
+    width: 100%; height: 2px; background: var(--range-track); border-radius: 1px; outline: none;
+  }
+  input[type=range]::-webkit-slider-thumb {
+    -webkit-appearance: none; appearance: none;
+    width: 14px; height: 14px; background: var(--text); border-radius: 50%;
+    cursor: pointer; transition: transform 0.15s;
+  }
+  input[type=range]::-webkit-slider-thumb:hover { transform: scale(1.15); background: var(--accent); }
+  input[type=range]::-moz-range-thumb {
+    width: 14px; height: 14px; background: var(--text); border-radius: 50%;
+    cursor: pointer; border: none;
+  }
+  /* Inner section divider — a thin grey line used between groups
+     within a single section (e.g. color group vs light group inside
+     Material & Light). Uses the same border token as the main
+     between-section dividers, so visual language is consistent. */
+  .inner-divider {
+    height: 1px;
+    background: var(--panel-border);
+    margin: 22px 0 4px;
+  }
+  /* Section divider — a thin grey line placed BETWEEN two `.section`
+     blocks. Since the preceding section already contributes its own
+     `margin-bottom: 26px`, we only add margin BELOW the divider so the
+     line ends up visually centered in the gap between sections. */
+  .section-divider {
+    height: 1px;
+    background: var(--panel-border);
+    margin: 0 0 26px;
+  }
+  /* Light-direction dial — draggable puck on a circle's perimeter.
+     Puck angle (relative to center, measured clockwise from "right")
+     drives state.lightAngle in degrees. */
+  .light-dial-row { margin: 22px 0 22px; }
+  .light-dial-label { display: flex; justify-content: space-between; align-items: baseline; margin-bottom: 10px; }
+  .light-dial {
+    position: relative;
+    width: 78px; height: 78px;
+    margin: 0 auto;
+    cursor: grab;
+    touch-action: none; /* prevent scrolling while dragging */
+    user-select: none;
+  }
+  .light-dial:active { cursor: grabbing; }
+  .light-dial-track {
+    position: absolute; inset: 0;
+    border-radius: 50%;
+    border: 1px solid rgba(0,0,0,0.12);
+    background: radial-gradient(circle at center, rgba(0,0,0,0.025), transparent 70%);
+  }
+  .light-dial-center {
+    position: absolute;
+    left: 50%; top: 50%;
+    width: 3px; height: 3px;
+    margin: -1.5px 0 0 -1.5px;
+    border-radius: 50%;
+    background: var(--text-faint);
+  }
+  .light-dial-puck {
+    position: absolute;
+    left: 50%; top: 50%;
+    width: 12px; height: 12px;
+    margin: -6px 0 0 -6px;
+    border-radius: 50%;
+    background: var(--accent);
+    box-shadow: 0 0 0 2px var(--panel), 0 1px 3px rgba(0,0,0,0.18);
+    /* Position computed by JS via CSS transform. */
+    transform: translate(0, 0);
+    pointer-events: none; /* dial container handles all events */
+    transition: background 0.15s;
+  }
+  .light-dial:hover .light-dial-puck { background: var(--text); }
+  .color-row { display: flex; gap: 10px; align-items: center; }
+  .color-swatch {
+    width: 44px; height: 44px; border-radius: 8px;
+    border: 1px solid var(--panel-border);
+    cursor: pointer; position: relative; overflow: hidden; flex-shrink: 0;
+    box-shadow: inset 0 0 0 1px rgba(0,0,0,0.04);
+  }
+  .color-swatch input { position: absolute; inset: -2px; opacity: 0; cursor: pointer; width: calc(100% + 4px); height: calc(100% + 4px); }
+  .preset-row { display: flex; gap: 6px; flex: 1; flex-wrap: wrap; }
+  .preset {
+    width: 22px; height: 22px; border-radius: 50%;
+    cursor: pointer; border: 1px solid rgba(0,0,0,0.08);
+    transition: transform 0.15s ease;
+  }
+  .preset:hover { transform: scale(1.15); }
+  .preset.active { box-shadow: 0 0 0 2px white, 0 0 0 3px var(--text); }
+  .style-row, .bg-row { display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; }
+  .style-opt, .bg-opt {
+    height: 36px; background: var(--hover);
+    border: 1px solid transparent; border-radius: 8px; cursor: pointer;
+    display: flex; align-items: center; justify-content: center;
+    font-family: 'JetBrains Mono', monospace; font-size: 10px; letter-spacing: 0.12em; text-transform: uppercase;
+    color: var(--text-dim); transition: all 0.15s ease;
+  }
+  .style-opt:hover, .bg-opt:hover { color: var(--text); background: var(--active); }
+  .style-opt.active, .bg-opt.active { background: var(--accent-dim); border-color: var(--accent); color: var(--accent); }
+  .divider { height: 1px; background: var(--divider); margin: 0 0 22px; }
+  @media (max-width: 720px) {
+    #app { flex-direction: column; }
+    .panel { width: 100%; max-height: 40vh; }
+    .panel-left  { border-right: none; border-bottom: 1px solid var(--panel-border); }
+    .panel-right { border-left:  none; border-top:    1px solid var(--panel-border); }
+    .panel-brand { margin-bottom: 16px; }
+    .actions { top: 16px; right: 16px; }
+    .status, .hint { display: none; }
+  }
+  .loading {
+    position: absolute; inset: 0;
+    display: flex; align-items: center; justify-content: center;
+    background: var(--stage-bg); z-index: 50; transition: opacity 0.5s ease;
+  }
+  .loading.hidden { opacity: 0; pointer-events: none; }
+  .loading-text { font-family: 'JetBrains Mono', monospace; font-size: 11px; letter-spacing: 0.2em; text-transform: uppercase; color: var(--text-faint); }
+</style>
+</head>
+<body>
+<div id="app">
+  <aside class="panel panel-left">
+    <div class="panel-brand">
+      <svg class="brandmark" viewBox="0 0 40 32" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+        <!-- Single tilted glassy plate — the original mark direction
+             from the earlier "this is the one we liked" version.
+             Body gradient, iridescent dispersion corner, top-edge
+             spec, right-edge rim light. -->
+        <defs>
+          <linearGradient id="bm-body" x1="0" y1="0" x2="1" y2="1">
+            <stop offset="0%"   stop-color="#dceaff"/>
+            <stop offset="35%"  stop-color="#5aa3ff"/>
+            <stop offset="75%"  stop-color="#2c6fd1"/>
+            <stop offset="100%" stop-color="#1e40af"/>
+          </linearGradient>
+          <linearGradient id="bm-iri" x1="0.55" y1="0.55" x2="1" y2="1">
+            <stop offset="0%"   stop-color="#1e40af" stop-opacity="0"/>
+            <stop offset="100%" stop-color="#6b4ab0" stop-opacity="0.7"/>
+          </linearGradient>
+          <linearGradient id="bm-spec" x1="0" y1="0" x2="0" y2="1">
+            <stop offset="0%"   stop-color="#ffffff" stop-opacity="1"/>
+            <stop offset="100%" stop-color="#ffffff" stop-opacity="0"/>
+          </linearGradient>
+          <linearGradient id="bm-rim" x1="0" y1="0" x2="1" y2="0">
+            <stop offset="0%"   stop-color="#ffffff" stop-opacity="0"/>
+            <stop offset="100%" stop-color="#ffffff" stop-opacity="0.7"/>
+          </linearGradient>
+        </defs>
+        <g transform="translate(20 16) rotate(-10) translate(-14 -10)">
+          <rect x="0" y="0" width="28" height="20" rx="4" fill="url(#bm-body)"/>
+          <rect x="0" y="0" width="28" height="20" rx="4" fill="url(#bm-iri)"/>
+          <rect x="0" y="0" width="28" height="3"   rx="1.5" fill="url(#bm-spec)"/>
+          <rect x="24" y="0" width="4" height="20"  rx="1.5" fill="url(#bm-rim)"/>
+        </g>
+      </svg>
+      <div class="wordmark">Prism</div>
+    </div>
+    <div class="section">
+      <div class="section-title"><span>Material &amp; light</span></div>
+      <div class="color-row" style="margin-bottom: 10px;">
+        <div class="color-swatch" id="colorSwatch">
+          <input type="color" id="color" value="#1e40af" />
+        </div>
+        <span style="font-family: 'JetBrains Mono', monospace; font-size: 10px; letter-spacing: 0.12em; text-transform: uppercase; color: var(--text-faint);">Custom color</span>
+      </div>
+      <div style="font-family: 'JetBrains Mono', monospace; font-size: 10px; letter-spacing: 0.12em; text-transform: uppercase; color: var(--text-faint); margin: 14px 0 10px;">Brand palette</div>
+      <div class="preset-row" id="presetRow" style="display: grid; grid-template-columns: repeat(5, 1fr); gap: 6px;">
+        <button class="preset" style="background:#5aa3ff" data-color="#5aa3ff" title="Bright sky"></button>
+        <button class="preset" style="background:#4a90e2" data-color="#4a90e2" title="Vivid"></button>
+        <button class="preset" style="background:#3b82f6" data-color="#3b82f6" title="Royal"></button>
+        <button class="preset" style="background:#2c6fd1" data-color="#2c6fd1" title="Deep"></button>
+        <button class="preset" style="background:#1e40af" data-color="#1e40af" title="Navy"></button>
+      </div>
+      <!-- Divider between the color group (custom + brand palette)
+           and the light-and-material controls below. -->
+      <div class="inner-divider"></div>
+      <!-- Light-direction dial. Drag the puck around the circle's
+           perimeter to pick where the key light falls from. State
+           field is `lightAngle` (degrees, 0–360). -->
+      <div class="light-dial-row">
+        <div class="light-dial-label">
+          <span class="slider-label">Light direction</span>
+          <span class="slider-val" id="valLightAngle">20°</span>
+        </div>
+        <div class="light-dial" id="lightDial" role="slider" tabindex="0" aria-label="Light direction">
+          <div class="light-dial-track"></div>
+          <div class="light-dial-center"></div>
+          <div class="light-dial-puck" id="lightDialPuck"></div>
+        </div>
+      </div>
+      <div class="slider-row"><div class="slider-head"><span class="slider-label">Color depth</span><span class="slider-val" id="valSat">3.50</span></div><input type="range" id="sat" min="20" max="400" value="350" /></div>
+      <div class="slider-row"><div class="slider-head"><span class="slider-label">Refraction</span><span class="slider-val" id="valIor">1.50</span></div><input type="range" id="ior" min="100" max="210" value="150" /></div>
+      <div class="slider-row"><div class="slider-head"><span class="slider-label">Surface polish</span><span class="slider-val" id="valPolish">0.95</span></div><input type="range" id="polish" min="0" max="100" value="95" /></div>
+      <div class="slider-row"><div class="slider-head"><span class="slider-label">Bloom intensity</span><span class="slider-val" id="valBloom">0.20</span></div><input type="range" id="bloom" min="0" max="150" value="20" /></div>
+      <div class="slider-row"><div class="slider-head"><span class="slider-label">Exposure</span><span class="slider-val" id="valExp">0.95</span></div><input type="range" id="exp" min="50" max="200" value="95" /></div>
+    </div>
+    <div class="section">
+      <div class="section-title"><span>Background</span></div>
+      <div class="bg-row">
+        <button class="bg-opt active" data-bg="light">Light</button>
+        <button class="bg-opt" data-bg="dark">Dark</button>
+        <button class="bg-opt" data-bg="transparent">None</button>
+      </div>
+    </div>
+  </aside>
+  <div id="stage">
+    <canvas id="canvas"></canvas>
+    <div class="actions">
+      <button class="icon-btn" id="themeBtn" title="Toggle theme">
+        <!-- Sun icon shown in dark theme (click to go light). -->
+        <svg class="theme-icon-sun" viewBox="0 0 24 24"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M2 12h2M20 12h2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M4.93 19.07l1.41-1.41M17.66 6.34l1.41-1.41"/></svg>
+        <!-- Moon icon shown in light theme (click to go dark). -->
+        <svg class="theme-icon-moon" viewBox="0 0 24 24"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/></svg>
+      </button>
+      <button class="icon-btn" id="randomBtn" title="Randomize">
+        <svg viewBox="0 0 24 24"><path d="M16 3h5v5M4 20l17-17M21 16v5h-5M15 15l6 6M4 4l5 5"/></svg>
+      </button>
+      <div class="export-wrap">
+        <button class="primary" id="exportBtn">
+          <svg viewBox="0 0 24 24"><path d="M12 3v12m0 0l-4-4m4 4l4-4M5 21h14"/></svg>
+          Export <span id="exportLabel">4K</span>
+          <svg viewBox="0 0 24 24" style="width:11px;height:11px;margin-left:2px;"><path d="M6 9l6 6 6-6"/></svg>
+        </button>
+        <div class="export-menu" id="exportMenu">
+          <div class="export-menu-section">Landscape</div>
+          <button data-w="1920" data-h="1080" data-label="HD">HD &nbsp;·&nbsp; 1920 × 1080</button>
+          <button data-w="2560" data-h="1440" data-label="QHD">QHD &nbsp;·&nbsp; 2560 × 1440</button>
+          <button data-w="3840" data-h="2160" data-label="4K" class="active">4K &nbsp;·&nbsp; 3840 × 2160</button>
+          <button data-w="7680" data-h="4320" data-label="8K">8K &nbsp;·&nbsp; 7680 × 4320</button>
+          <div class="export-menu-section">Portrait</div>
+          <button data-w="1080" data-h="1920" data-label="HD-P">HD &nbsp;·&nbsp; 1080 × 1920</button>
+          <button data-w="2160" data-h="3840" data-label="4K-P">4K &nbsp;·&nbsp; 2160 × 3840</button>
+          <div class="export-menu-section">Square</div>
+          <button data-w="2048" data-h="2048" data-label="2K□">2K &nbsp;·&nbsp; 2048 × 2048</button>
+          <button data-w="4096" data-h="4096" data-label="4K□">4K &nbsp;·&nbsp; 4096 × 4096</button>
+        </div>
+      </div>
+    </div>
+    <div class="status">
+      <span><b>Shape</b><span id="statShape">pill</span></span>
+      <span><b>Form</b><span id="statForm">ring</span></span>
+      <span><b>Count</b><span id="statCount">13</span></span>
+    </div>
+    <div class="hint">Drag · Scroll to zoom</div>
+    <div class="loading" id="loading"><div class="loading-text">Compiling shaders…</div></div>
+  </div>
+  <aside class="panel panel-right">
+    <div class="section">
+      <div class="section-title"><span>Shape</span></div>
+      <div class="opt-grid" id="shapeGrid">
+        <button class="opt" data-shape="disc"><svg viewBox="0 0 24 24"><ellipse cx="12" cy="12" rx="9" ry="9"/></svg></button>
+        <button class="opt active" data-shape="roundedRect"><svg viewBox="0 0 24 24"><rect x="3" y="7" width="18" height="10" rx="4"/></svg></button>
+        <button class="opt" data-shape="rect"><svg viewBox="0 0 24 24"><rect x="3" y="7" width="18" height="10"/></svg></button>
+        <button class="opt" data-shape="square"><svg viewBox="0 0 24 24"><rect x="5" y="5" width="14" height="14"/></svg></button>
+        <button class="opt" data-shape="roundedSquare"><svg viewBox="0 0 24 24"><rect x="5" y="5" width="14" height="14" rx="4"/></svg></button>
+      </div>
+      <div class="opt-labels" id="shapeLabels">
+        <span>Disc</span><span class="active">Pill</span><span>Rect</span><span>Square</span><span>Round</span>
+      </div>
+    </div>
+    <div class="section">
+      <div class="section-title"><span>Composition</span></div>
+      <div class="opt-grid" id="compGrid" style="grid-template-columns: repeat(4, 1fr);">
+        <button class="opt" data-comp="tower"><svg viewBox="0 0 24 24"><path d="M4 4h16M4 9h16M4 14h16M4 19h16"/></svg></button>
+        <button class="opt" data-comp="scatter"><svg viewBox="0 0 24 24"><circle cx="6" cy="6" r="1.5"/><circle cx="17" cy="8" r="1.5"/><circle cx="9" cy="15" r="1.5"/><circle cx="18" cy="17" r="1.5"/><circle cx="5" cy="19" r="1.5"/></svg></button>
+        <button class="opt" data-comp="grid"><svg viewBox="0 0 24 24"><rect x="4" y="4" width="6" height="6"/><rect x="14" y="4" width="6" height="6"/><rect x="4" y="14" width="6" height="6"/><rect x="14" y="14" width="6" height="6"/></svg></button>
+        <button class="opt active" data-comp="ring"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="8"/><circle cx="12" cy="12" r="3"/><path d="M12 4v3M12 17v3M4 12h3M17 12h3M6.3 6.3l2.1 2.1M15.6 15.6l2.1 2.1M6.3 17.7l2.1-2.1M15.6 8.4l2.1-2.1"/></svg></button>
+      </div>
+      <div class="opt-labels" id="compLabels" style="grid-template-columns: repeat(4, 1fr);">
+        <span>Tower</span><span>Scatter</span><span>Grid</span><span class="active">Ring</span>
+      </div>
+    </div>
+    <!-- Divider between Shape+Composition (what the object IS) and
+         Material style+Form parameters (how it BEHAVES). Mirrors the
+         color/light split in the left panel. -->
+    <div class="section-divider"></div>
+    <div class="section">
+      <div class="section-title"><span>Material style</span></div>
+      <div class="style-row">
+        <button class="style-opt active" data-style="layered">Layered</button>
+        <button class="style-opt" data-style="crystal">Crystal</button>
+        <button class="style-opt" data-style="frosted">Frosted</button>
+      </div>
+    </div>
+    <div class="section">
+      <div class="section-title"><span>Form parameters</span></div>
+      <div class="slider-row"><div class="slider-head"><span class="slider-label">Element count</span><span class="slider-val" id="valCount">13</span></div><input type="range" id="count" min="3" max="40" value="13" /></div>
+      <div class="slider-row"><div class="slider-head"><span class="slider-label">Twist amount</span><span class="slider-val" id="valTwist">1.7</span></div><input type="range" id="twist" min="0" max="500" value="170" /></div>
+      <div class="slider-row"><div class="slider-head"><span class="slider-label">Scale taper</span><span class="slider-val" id="valTaper">0.15</span></div><input type="range" id="taper" min="0" max="100" value="15" /></div>
+      <div class="slider-row"><div class="slider-head"><span class="slider-label">Spacing</span><span class="slider-val" id="valSpacing">1.20</span></div><input type="range" id="spacing" min="20" max="250" value="120" /></div>
+      <div class="slider-row"><div class="slider-head"><span class="slider-label">Thickness</span><span class="slider-val" id="valThick">0.18</span></div><input type="range" id="thick" min="3" max="80" value="18" /></div>
+    </div>
+  </aside>
+</div>
+
+<script type="importmap">
+{
+  "imports": {
+    "three": "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js",
+    "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/"
+  }
+}
+</script>
+<script type="module">
+  async function loadModules(base) {
+    const T = await import(base ? base + 'build/three.module.js' : 'three');
+    const ECpath = base ? base + 'examples/jsm/postprocessing/EffectComposer.js' : 'three/addons/postprocessing/EffectComposer.js';
+    const RPpath = base ? base + 'examples/jsm/postprocessing/RenderPass.js' : 'three/addons/postprocessing/RenderPass.js';
+    const UBPpath = base ? base + 'examples/jsm/postprocessing/UnrealBloomPass.js' : 'three/addons/postprocessing/UnrealBloomPass.js';
+    const OPpath = base ? base + 'examples/jsm/postprocessing/OutputPass.js' : 'three/addons/postprocessing/OutputPass.js';
+    const [{ EffectComposer }, { RenderPass }, { UnrealBloomPass }, { OutputPass }] = await Promise.all([
+      import(ECpath), import(RPpath), import(UBPpath), import(OPpath)
+    ]);
+    return { T, EffectComposer, RenderPass, UnrealBloomPass, OutputPass };
+  }
+  try {
+    const m = await loadModules(null);
+    window.THREE = m.T;
+    window.PP = { EffectComposer: m.EffectComposer, RenderPass: m.RenderPass, UnrealBloomPass: m.UnrealBloomPass, OutputPass: m.OutputPass };
+  } catch (err) {
+    console.warn('Primary CDN failed, trying unpkg:', err);
+    try {
+      const m = await loadModules('https://unpkg.com/three@0.160.0/');
+      window.THREE = m.T;
+      window.PP = { EffectComposer: m.EffectComposer, RenderPass: m.RenderPass, UnrealBloomPass: m.UnrealBloomPass, OutputPass: m.OutputPass };
+    } catch (err2) {
+      console.error('All CDNs failed:', err2);
+      const ld = document.getElementById('loading');
+      if (ld) ld.innerHTML = '<div class="loading-text" style="color:#dc2626">Could not load Three.js</div>';
+    }
+  }
+  if (window.__glassInit) window.__glassInit();
+  else window.__threeReady = true;
+</script>
+<script>
+'use strict';
+
+// =================================================================
+// STATE — tuned for layered translucent glass plates
+// =================================================================
+const state = {
+  shape: 'roundedRect',
+  comp: 'ring',
+  matStyle: 'layered',  // dual-mesh core+shell approach
+  count: 13,
+  twist: 1.7,
+  taper: 0.15,
+  thickness: 0.18,
+  spacing: 1.2,
+  color: '#1e40af',
+  saturation: 3.5,
+  ior: 1.5,
+  polish: 0.95,
+  bloom: 0.2,
+  exposure: 0.95,
+  // Key light direction in degrees. 0 = light from the right
+  // (positive X), 90 = from the back (positive Z), 180 = from the
+  // left, 270 = from the front. Drives buildProductStudioEnvironment
+  // to rotate the two side key softboxes around Y. Default keeps
+  // the original layout (key from front-right ≈ 20° tilt).
+  lightAngle: 20,
+  background: 'light',
+  seed: Math.random() * 1000,
+};
+
+// =================================================================
+// COMPOSITION DEFAULTS — hand-tuned per-composition starting values.
+// Applied whenever the user clicks a composition button. Each entry
+// sets the form parameters to a value that looks good for that layout
+// (no clipping, balanced proportions, etc). Add/edit entries as you
+// dial in each composition.
+//
+// Keys are the same as state.comp values. Each value lists only the
+// state fields that should be overridden — anything missing is left
+// alone. Sliders and labels are updated to match.
+// =================================================================
+const COMP_DEFAULTS = {
+  // tower, scatter, grid: not yet defined — fall back to auto-safe spacing.
+  // ring: keeps its 1.20 default; never auto-overridden.
+};
+
+let renderer, scene, camera, group, envTexture;
+let shellMaterial, coreMaterial;  // KEY CHANGE: two materials for layered effect
+let composer, bloomPass, renderPass;
+const canvas = document.getElementById('canvas');
+const stage = document.getElementById('stage');
+
+function init() {
+  if (typeof THREE === 'undefined') {
+    document.getElementById('loading').innerHTML = '<div class="loading-text" style="color:#dc2626">Three.js failed to load.</div>';
+    return;
+  }
+  renderer = new THREE.WebGLRenderer({ canvas, antialias: true, alpha: true, preserveDrawingBuffer: true });
+  renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+  renderer.toneMapping = THREE.ACESFilmicToneMapping;
+  renderer.toneMappingExposure = state.exposure;
+  if ('outputColorSpace' in renderer) renderer.outputColorSpace = THREE.SRGBColorSpace;
+  else renderer.outputEncoding = THREE.sRGBEncoding;
+
+  scene = new THREE.Scene();
+  camera = new THREE.PerspectiveCamera(32, 1, 0.1, 100);
+  camera.position.set(0, 0, 8);
+
+  group = new THREE.Group();
+  scene.add(group);
+
+  envTexture = buildProductStudioEnvironment(renderer, state.lightAngle);
+  scene.environment = envTexture;
+
+  setBackground(state.background);
+  resize();
+  setupComposer();
+
+  rebuildMaterials();
+  rebuild();
+  setupControls();
+  bindUI();
+  animate();
+
+  setTimeout(() => document.getElementById('loading').classList.add('hidden'), 250);
+}
+
+// =================================================================
+// PRODUCT STUDIO ENVIRONMENT — same approach as v4
+// Bright softboxes against mid-tone dome creates the contrast
+// reflections that read as glass.
+// =================================================================
+function buildProductStudioEnvironment(renderer, lightAngleDeg = 20) {
+  const pmrem = new THREE.PMREMGenerator(renderer);
+  pmrem.compileEquirectangularShader();
+  const envScene = new THREE.Scene();
+
+  const dome = new THREE.Mesh(
+    new THREE.SphereGeometry(50, 64, 64),
+    new THREE.ShaderMaterial({
+      side: THREE.BackSide,
+      uniforms: {
+        topColor: { value: new THREE.Color(0xe8eef8) },
+        midColor: { value: new THREE.Color(0xb8c8e0) },
+        bottomColor: { value: new THREE.Color(0x809cb8) },
+        stripeStrength: { value: 0.35 },
+      },
+      vertexShader: `
+        varying vec3 vWorldPos;
+        void main() {
+          vWorldPos = (modelMatrix * vec4(position, 1.0)).xyz;
+          gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+        }`,
+      fragmentShader: `
+        uniform vec3 topColor; uniform vec3 midColor; uniform vec3 bottomColor;
+        uniform float stripeStrength;
+        varying vec3 vWorldPos;
+        void main() {
+          vec3 n = normalize(vWorldPos);
+          float h = n.y * 0.5 + 0.5;
+          vec3 c = mix(bottomColor, midColor, smoothstep(0.0, 0.5, h));
+          c = mix(c, topColor, smoothstep(0.5, 1.0, h));
+          // Vertical bright/dark stripes — these become the rich reflection
+          // bands visible on the surface of glossy glass. The reference image
+          // shows clear bright/dim vertical bands in the surface reflections;
+          // a uniform dome can't produce those.
+          float angle = atan(n.z, n.x);
+          float stripe = 0.5 + 0.5 * cos(angle * 6.0);
+          stripe = smoothstep(0.3, 0.7, stripe);
+          c *= mix(1.0 - stripeStrength * 0.5, 1.0 + stripeStrength, stripe);
+          gl_FragColor = vec4(c, 1.0);
+        }`
+    })
+  );
+  envScene.add(dome);
+
+  function addPanel(x, y, z, w, h, intensity, tint = [1,1,1]) {
+    const mat = new THREE.MeshBasicMaterial({
+      color: new THREE.Color(tint[0] * intensity, tint[1] * intensity, tint[2] * intensity),
+      side: THREE.DoubleSide,
+    });
+    const mesh = new THREE.Mesh(new THREE.PlaneGeometry(w, h), mat);
+    mesh.position.set(x, y, z);
+    mesh.lookAt(0, 0, 0);
+    envScene.add(mesh);
+  }
+  // Key softboxes
+  // Top-down stays fixed — without it the scene goes dark from above.
+  addPanel(0, 9, 0, 14, 10, 10.0, [1.0, 1.0, 0.98]);
+  // Two opposing side keys orbit around Y based on lightAngleDeg.
+  // The original layout placed them at (8,1,3) and (-8,1,-3), which
+  // corresponds to an angle of ≈20°. Distance from origin is preserved
+  // (sqrt(8² + 3²) ≈ 8.54).
+  const angleRad = lightAngleDeg * Math.PI / 180;
+  const sideDist = 8.54;
+  const kxA = Math.cos(angleRad) * sideDist;
+  const kzA = Math.sin(angleRad) * sideDist;
+  addPanel(kxA,  1,  kzA, 3, 16, 9.0, [1.0, 0.98, 0.95]); // primary side key
+  addPanel(-kxA, 1, -kzA, 3, 16, 7.0, [0.95, 0.98, 1.0]); // opposing fill key
+  // Back fill, top fill, edge fills — kept at fixed positions so the
+  // base ambient doesn't shift around when the user spins the dial.
+  addPanel(0, 1, -9, 8, 10, 6.0, [0.92, 0.96, 1.0]);
+  addPanel(-4, 0, 8, 4, 5, 2.5, [1.0, 1.0, 1.0]);
+  addPanel(5, -2, 7, 3, 4, 2.0, [1.0, 1.0, 1.0]);
+
+  const target = pmrem.fromScene(envScene, 0.04, 0.1, 100);
+  pmrem.dispose();
+  return target.texture;
+}
+
+// =================================================================
+// Rebuilds the environment map with a new key-light angle and swaps
+// it onto the scene. Disposes the previous texture to avoid GPU
+// memory leaks (PMREM textures aren't tiny — eats RAM if not freed).
+// Called from the light-direction dial as the puck moves.
+// =================================================================
+function rebuildEnvironment() {
+  const oldTex = envTexture;
+  envTexture = buildProductStudioEnvironment(renderer, state.lightAngle);
+  scene.environment = envTexture;
+  if (oldTex) oldTex.dispose();
+}
+
+// =================================================================
+// CORE + SHELL MATERIALS — the KEY change for layered glass
+//
+// Each plate gets TWO meshes:
+//   CORE  - opaque blue, slightly smaller. Captured in the
+//           transmission backbuffer. This is what other plates
+//           refract THROUGH themselves to give the "see plates
+//           inside plates" effect from the reference.
+//   SHELL - the glass surface itself. Transmissive, refracts
+//           the backbuffer (which contains all cores) to create
+//           the layered optical depth.
+// =================================================================
+function rebuildMaterials() {
+  const baseColor = new THREE.Color(state.color);
+
+  // ===== CORE: polished glass-like body that LOOKS like glass itself =====
+  // CRITICAL CHANGE: in v5 the core was diffuse blue rubber (roughness 0.55).
+  // When other shells refracted through it, they saw flat blue blobs.
+  // Now the core is super-polished with strong env reflections so its
+  // bevels have BRIGHT white highlights — and *those* highlights are
+  // what gets refracted through other plates' shells, producing the
+  // "see-through bright bevels behind" effect from the reference.
+  //
+  // The color is near-WHITE (lerped only 18% toward the brand color)
+  // so each plate appears almost clear. The blue accumulates through
+  // shell attenuation only when light passes through multiple plates,
+  // giving the exact color-buildup-on-overlap effect in the reference.
+  if (coreMaterial) coreMaterial.dispose();
+  if (state.matStyle === 'layered') {
+    const coreColor = new THREE.Color(0xffffff).lerp(baseColor, 0.42);
+    coreMaterial = new THREE.MeshPhysicalMaterial({
+      color: coreColor,
+      metalness: 0.0,
+      roughness: 0.04,           // mirror-polished — catches bright highlights
+      clearcoat: 1.0,
+      clearcoatRoughness: 0.02,
+      envMapIntensity: 1.8,      // strong env reflections on the bevels
+      specularIntensity: 1.0,
+      specularColor: new THREE.Color(0xffffff),
+      side: THREE.DoubleSide,
+    });
+  } else {
+    coreMaterial = null;
+  }
+
+  // ===== SHELL: the transmissive glass surface =====
+  if (shellMaterial) shellMaterial.dispose();
+  const shellParams = {
+    color: 0xffffff,
+    metalness: 0.0,
+    side: THREE.DoubleSide,
+  };
+
+  if (state.matStyle === 'layered') {
+    Object.assign(shellParams, {
+      roughness: Math.max(0.0, (1 - state.polish) * 0.1),
+      transmission: 1.0,
+      // Lower thickness for thin plates — the core handles the body color,
+      // the shell just handles the surface optics
+      thickness: 0.4,
+      ior: state.ior,
+      attenuationColor: baseColor.clone(),
+      // SHORTER attenuation distance — each shell pass should tint the
+      // refracted light visibly. With cores near-white, the color comes
+      // entirely from these attenuation passes, and they accumulate
+      // through overlapping plates to produce the deep blue in overlaps.
+      attenuationDistance: 0.9 / Math.max(0.2, state.saturation),
+      clearcoat: 1.0,
+      clearcoatRoughness: Math.max(0.0, (1 - state.polish) * 0.08),
+      envMapIntensity: 1.7,
+      specularIntensity: 1.0,
+      specularColor: new THREE.Color(0xffffff),
+      iridescence: 0.2,
+      iridescenceIOR: 1.4,
+      iridescenceThicknessRange: [200, 600],
+    });
+  } else if (state.matStyle === 'crystal') {
+    // Single-mesh chunky polished glass (no core)
+    Object.assign(shellParams, {
+      roughness: Math.max(0.0, (1 - state.polish) * 0.12),
+      transmission: 1.0,
+      thickness: 2.8,
+      ior: state.ior,
+      attenuationColor: baseColor.clone(),
+      attenuationDistance: 1.4 / Math.max(0.2, state.saturation),
+      clearcoat: 1.0,
+      clearcoatRoughness: Math.max(0.0, (1 - state.polish) * 0.08),
+      envMapIntensity: 1.5,
+      specularIntensity: 1.0,
+      specularColor: new THREE.Color(0xffffff),
+      anisotropy: 0.35,
+      anisotropyRotation: Math.PI / 6,
+      iridescence: 0.35,
+      iridescenceIOR: 1.4,
+      iridescenceThicknessRange: [100, 500],
+    });
+    // Feature-detect dispersion against a real instance (more reliable
+    // than checking the prototype — defineProperty descriptors don't
+    // always show in `in` checks on the prototype object).
+    const _probe = new THREE.MeshPhysicalMaterial();
+    if ('dispersion' in _probe) {
+      shellParams.dispersion = 0.6;
+    }
+    _probe.dispose();
+  } else if (state.matStyle === 'frosted') {
+    Object.assign(shellParams, {
+      roughness: 0.18 + (1 - state.polish) * 0.15,
+      transmission: 0.92,
+      thickness: 1.5,
+      ior: state.ior,
+      attenuationColor: baseColor.clone(),
+      attenuationDistance: 1.2 / Math.max(0.2, state.saturation),
+      clearcoat: 0.6,
+      clearcoatRoughness: 0.2,
+      envMapIntensity: 1.0,
+      specularIntensity: 1.0,
+      anisotropy: 0.2,
+    });
+  }
+
+  shellMaterial = new THREE.MeshPhysicalMaterial(shellParams);
+}
+
+function updateMaterialsLive() {
+  // Cheap path: just push color/saturation changes without rebuilding materials
+  const baseColor = new THREE.Color(state.color);
+  if (coreMaterial) {
+    // Same lerp formula as makeMaterials: near-white core that builds
+    // color through shell attenuation, not through the core's own tint
+    coreMaterial.color.copy(new THREE.Color(0xffffff)).lerp(baseColor, 0.42);
+  }
+  if (shellMaterial) {
+    shellMaterial.attenuationColor.copy(baseColor);
+    const distFactor = state.matStyle === 'layered' ? 0.9 :
+                       state.matStyle === 'crystal' ? 1.4 : 1.2;
+    shellMaterial.attenuationDistance = distFactor / Math.max(0.2, state.saturation);
+    shellMaterial.ior = state.ior;
+    const polishMul = state.matStyle === 'layered' ? 0.1 :
+                       state.matStyle === 'crystal' ? 0.12 : 0.15;
+    const polishBase = state.matStyle === 'frosted' ? 0.18 : 0.0;
+    shellMaterial.roughness = Math.max(0.0, polishBase + (1 - state.polish) * polishMul);
+    shellMaterial.clearcoatRoughness = Math.max(0.0, (1 - state.polish) * 0.08);
+  }
+}
+
+// =================================================================
+// GEOMETRY
+// =================================================================
+const geometryCache = new Map();
+
+function getGeometry(shape, thickness) {
+  const key = shape + '_' + thickness.toFixed(3);
+  if (geometryCache.has(key)) return geometryCache.get(key);
+  let shapeObj;
+  const W = 1.7, H = 1.05;
+  if (shape === 'disc') {
+    shapeObj = new THREE.Shape();
+    shapeObj.absarc(0, 0, 0.95, 0, Math.PI * 2, false);
+  } else if (shape === 'roundedRect') {
+    shapeObj = roundedRectShape(W, H, 0.42);
+  } else if (shape === 'rect') {
+    shapeObj = roundedRectShape(W, H, 0.001);
+  } else if (shape === 'square') {
+    shapeObj = roundedRectShape(1.25, 1.25, 0.001);
+  } else if (shape === 'roundedSquare') {
+    shapeObj = roundedRectShape(1.25, 1.25, 0.3);
+  }
+  // Soft, generous bevel for catching softbox highlights
+  const bevel = Math.min(thickness * 0.40, 0.10);
+  const geo = new THREE.ExtrudeGeometry(shapeObj, {
+    depth: Math.max(0.005, thickness - bevel * 2),
+    bevelEnabled: true,
+    bevelThickness: bevel,
+    bevelSize: bevel,
+    bevelSegments: 12,
+    curveSegments: 96,
+  });
+  geo.translate(0, 0, -thickness / 2);
+  geo.computeVertexNormals();
+  geometryCache.set(key, geo);
+  return geo;
+}
+
+function roundedRectShape(w, h, r) {
+  const shape = new THREE.Shape();
+  const x = -w / 2, y = -h / 2;
+  r = Math.min(r, w / 2, h / 2);
+  shape.moveTo(x + r, y);
+  shape.lineTo(x + w - r, y);
+  shape.quadraticCurveTo(x + w, y, x + w, y + r);
+  shape.lineTo(x + w, y + h - r);
+  shape.quadraticCurveTo(x + w, y + h, x + w - r, y + h);
+  shape.lineTo(x + r, y + h);
+  shape.quadraticCurveTo(x, y + h, x, y + h - r);
+  shape.lineTo(x, y + r);
+  shape.quadraticCurveTo(x, y, x + r, y);
+  return shape;
+}
+
+function clearGeometryCache() {
+  for (const g of geometryCache.values()) g.dispose();
+  geometryCache.clear();
+}
+
+// =================================================================
+// COMPOSITIONS
+// =================================================================
+function composeTower(count, twist, taper, spacing) {
+  // Tilted-stack tower — matches the reference composition
+  const arr = [];
+  const totalHeight = 3.4 * spacing;
+  for (let i = 0; i < count; i++) {
+    const t = count > 1 ? i / (count - 1) : 0.5;
+    const y = (t - 0.5) * totalHeight;
+    // Slight forward tilt + rotation between plates for that
+    // "stacked but slightly fanned" look in the reference
+    const tiltX = 0.25;  // slight forward tilt
+    const rotY = t * Math.PI * (twist * 0.35);
+    const s = 1.0 - Math.abs(t - 0.5) * taper * 0.4;
+    arr.push({ position: [0, y, 0], rotation: [tiltX, rotY, 0], scale: s });
+  }
+  return arr;
+}
+function composeScatter(count, twist, taper, spacing, seed) {
+  const arr = [];
+  const rng = mulberry32(Math.floor(seed * 1000));
+  const range = 2.6 * spacing;
+  for (let i = 0; i < count; i++) {
+    const x = (rng() - 0.5) * range * 1.4;
+    const y = (rng() - 0.5) * range;
+    const z = (rng() - 0.5) * range * 0.8;
+    const rx = (rng() - 0.5) * Math.PI * twist * 0.5;
+    const ry = (rng() - 0.5) * Math.PI * twist * 0.5;
+    const rz = (rng() - 0.5) * Math.PI * twist * 0.5;
+    const s = 0.5 + rng() * (1.0 - taper * 0.4);
+    arr.push({ position: [x, y, z], rotation: [rx, ry, rz], scale: s });
+  }
+  return arr;
+}
+function composeGrid(count, twist, taper, spacing, seed) {
+  const arr = [];
+  const rng = mulberry32(Math.floor(seed * 1000));
+  const cols = Math.ceil(Math.sqrt(count * 1.4));
+  const rows = Math.ceil(count / cols);
+  const cellW = (1.15 * spacing);
+  const cellH = (1.15 * spacing);
+  let idx = 0;
+  for (let r = 0; r < rows; r++) {
+    for (let c = 0; c < cols; c++) {
+      if (idx >= count) break;
+      const x = (c - (cols - 1) / 2) * cellW + (rng() - 0.5) * 0.1;
+      const y = (r - (rows - 1) / 2) * cellH + (rng() - 0.5) * 0.1;
+      const z = (rng() - 0.5) * 0.6 * spacing;
+      const rx = (rng() - 0.5) * Math.PI * twist * 0.15;
+      const ry = (rng() - 0.5) * Math.PI * twist * 0.15;
+      const rz = (rng() - 0.5) * Math.PI * twist * 0.15;
+      const s = 0.7 - taper * 0.3 + rng() * 0.2;
+      arr.push({ position: [x, y, z], rotation: [rx, ry, rz], scale: s });
+      idx++;
+    }
+  }
+  return arr;
+}
+function composeRing(count, twist, taper, spacing) {
+  // Plates arranged radially around a central axis, like turbine blades.
+  // - `spacing` controls the ring radius (how far each plate sits from center)
+  // - `count` controls how many plates fan around the ring
+  // - `twist` controls each plate's pitch angle (how angled toward camera)
+  // - `taper` slightly varies plate scale around the ring
+  const arr = [];
+  const ringRadius = 1.4 * spacing;
+  // Use full count around the circle so each step is one angular slot.
+  // Density now feels physical: more count = tighter packing.
+  for (let i = 0; i < count; i++) {
+    const t = i / count;                         // 0..1 around the ring
+    const theta = t * Math.PI * 2;               // angle around center
+    const x = Math.cos(theta) * ringRadius;
+    const y = Math.sin(theta) * ringRadius;
+    const z = 0;
+    // Orient each plate so its long axis points outward from center.
+    // Default plate long axis is +X, so rotate around Z by theta.
+    // Then add a pitch (rotation around the radial outward axis) so the
+    // plate face tilts — twist drives the pitch angle.
+    // Building this via a Three.js Euler order requires care: we rotate
+    // the rotation order to ZYX so theta-around-Z happens first.
+    const pitch = twist * 0.35;                  // fan-blade pitch angle
+    const ts = 1.0 - Math.abs(0.5 - t) * taper * 0.6;
+    arr.push({
+      position: [x, y, z],
+      rotation: [pitch, 0, theta],               // ZYX order: theta first, then pitch
+      rotationOrder: 'ZYX',
+      scale: ts,
+    });
+  }
+  return arr;
+}
+
+function mulberry32(a) {
+  return function() {
+    a |= 0; a = a + 0x6D2B79F5 | 0;
+    let t = a;
+    t = Math.imul(t ^ t >>> 15, t | 1);
+    t ^= t + Math.imul(t ^ t >>> 7, t | 61);
+    return ((t ^ t >>> 14) >>> 0) / 4294967296;
+  };
+}
+
+// =================================================================
+// SAFE SPACING — returns the minimum spacing where adjacent plates
+// don't visibly clip into each other, given the current composition,
+// shape, count, thickness, and twist. Used ONLY when switching
+// compositions (to set a sensible default for the new layout) —
+// NOT applied per frame, so the spacing slider remains fully usable
+// after the switch. Ring keeps its own default and is excluded.
+// =================================================================
+function plateExtents(shape) {
+  // Approximate in-plane footprint of a plate at scale 1.0. Mirrors
+  // the hard-coded base sizes in getGeometry().
+  if (shape === 'disc') return { long: 1.9, short: 1.9 };
+  if (shape === 'roundedRect' || shape === 'rect') return { long: 1.7, short: 1.05 };
+  return { long: 1.25, short: 1.25 }; // square / roundedSquare
+}
+
+function getMinSafeSpacing(state) {
+  const { long: pL, short: pS } = plateExtents(state.shape);
+  const th = state.thickness;
+  const n = Math.max(2, state.count);
+  const margin = 0.08; // small visual buffer so plates don't kiss exactly
+
+  if (state.comp === 'tower') {
+    // composeTower: constant forward tilt tiltX = 0.25 rad. Y-projected
+    // extent = thickness*cos(tilt) + plateShort*sin(tilt). Plate's short
+    // axis is the one that rotates into Y when a pill lies flat tilted
+    // forward, so use pS.
+    const tilt = 0.25;
+    const projExtent = th * Math.cos(tilt) + pS * Math.sin(tilt);
+    const requiredGap = projExtent + margin;
+    return (requiredGap * (n - 1)) / 3.4;
+  }
+
+  if (state.comp === 'grid') {
+    // composeGrid: cellW = cellH = 1.15 * spacing. Largest in-plane
+    // footprint is plateLong * scale, where composeGrid's max scale
+    // ≈ 0.9 (0.7 - taper*0.3 + rng*0.2).
+    const requiredCell = pL * 0.9 + margin;
+    return requiredCell / 1.15;
+  }
+
+  if (state.comp === 'scatter') {
+    // composeScatter: random placement in a stretched box of side
+    // proportional to spacing. Approximate the spacing needed by
+    // ensuring each plate has ~3x its own volume of placement room.
+    const plateVol = pL * pS * Math.max(th, 0.15) * Math.pow(0.75, 3);
+    const requiredVol = plateVol * 3 * n;
+    return Math.cbrt(requiredVol / 19.7); // 19.7 = (3.64 * 2.6 * 2.08), the box volume coefficient
+  }
+
+  // ring / anything else — caller already excluded these
+  return state.spacing;
+}
+
+// =================================================================
+// REBUILD — creates CORE + SHELL pair per plate when in layered mode
+// =================================================================
+function rebuild() {
+  // Properly clear scene group. Geometries are cached and reused, materials
+  // are shared, but the Group containers themselves should be released so
+  // they can be GC'd. We remove children explicitly (not by popping the
+  // backing array) so Three.js can run its own cleanup paths if it ever
+  // adds any.
+  for (let i = group.children.length - 1; i >= 0; i--) {
+    group.remove(group.children[i]);
+  }
+  const geo = getGeometry(state.shape, state.thickness);
+  let transforms;
+  switch (state.comp) {
+    case 'tower': transforms = composeTower(state.count, state.twist, state.taper, state.spacing); break;
+    case 'scatter': transforms = composeScatter(state.count, state.twist, state.taper, state.spacing, state.seed); break;
+    case 'grid': transforms = composeGrid(state.count, state.twist, state.taper, state.spacing, state.seed); break;
+    case 'ring': transforms = composeRing(state.count, state.twist, state.taper, state.spacing); break;
+  }
+
+  for (const t of transforms) {
+    const container = new THREE.Group();
+
+    // CORE — opaque colored body. Only added in "layered" style.
+    // Scaled to 0.95 so it sits INSIDE the shell's beveled volume.
+    // This is what becomes visible through OTHER plates' transmission.
+    if (state.matStyle === 'layered' && coreMaterial) {
+      const core = new THREE.Mesh(geo, coreMaterial);
+      core.scale.setScalar(0.95);
+      container.add(core);
+    }
+
+    // SHELL — transmissive glass surface
+    const shell = new THREE.Mesh(geo, shellMaterial);
+    container.add(shell);
+
+    container.position.fromArray(t.position);
+    // Default rotation order is XYZ; ring composition needs ZYX. Set it
+    // explicitly on every container so the order can never leak between
+    // composition switches.
+    container.rotation.order = t.rotationOrder || 'XYZ';
+    container.rotation.set(t.rotation[0], t.rotation[1], t.rotation[2]);
+    container.scale.setScalar(t.scale);
+    group.add(container);
+  }
+  if (!cameraInitialized) frameComposition();
+}
+
+function frameComposition() {
+  const box = new THREE.Box3().setFromObject(group);
+  const sphere = box.getBoundingSphere(new THREE.Sphere());
+  const radius = sphere.radius || 2;
+  const fov = camera.fov * Math.PI / 180;
+  const dist = radius / Math.sin(fov / 2) * 0.9;
+  targetDist = dist;
+  cameraDist = dist;
+  cameraInitialized = true;
+}
+let cameraInitialized = false;
+
+function setBackground(mode) {
+  // Note: the 3D scene background is INDEPENDENT from the UI theme.
+  // This setting controls only the canvas backdrop the rendered glass
+  // sits against. UI chrome (panels, text) follows the theme toggle.
+  stage.classList.remove('stage-transparent');
+  if (mode === 'light') {
+    scene.background = new THREE.Color(0xfafbfd);
+    renderer.setClearColor(0xfafbfd, 1);
+    stage.style.background = '#fafbfd';
+  } else if (mode === 'dark') {
+    scene.background = new THREE.Color(0x0a0a0c);
+    renderer.setClearColor(0x0a0a0c, 1);
+    stage.style.background = '#0a0a0c';
+  } else {
+    scene.background = null;
+    renderer.setClearColor(0x000000, 0);
+    // Checkerboard is themed via CSS class so dark UI gets dark check
+    stage.style.background = '';
+    stage.classList.add('stage-transparent');
+  }
+}
+
+function setupComposer() {
+  if (!window.PP) return;
+  const w = stage.clientWidth;
+  const h = stage.clientHeight;
+  composer = new PP.EffectComposer(renderer);
+  renderPass = new PP.RenderPass(scene, camera);
+  composer.addPass(renderPass);
+  bloomPass = new PP.UnrealBloomPass(
+    new THREE.Vector2(w, h),
+    state.bloom,
+    0.5,
+    0.75
+  );
+  composer.addPass(bloomPass);
+  composer.addPass(new PP.OutputPass());
+}
+
+// =================================================================
+// CAMERA CONTROLS
+// =================================================================
+let isDragging = false;
+let lastX = 0, lastY = 0;
+let rotX = 0, rotY = 0;
+let targetRotX = -0.10, targetRotY = 0.35;
+let cameraDist = 8, targetDist = 8;
+
+function setupControls() {
+  rotX = targetRotX;
+  rotY = targetRotY;
+  stage.addEventListener('pointerdown', e => {
+    if (e.target.closest('.actions')) return;
+    isDragging = true; lastX = e.clientX; lastY = e.clientY;
+    stage.setPointerCapture(e.pointerId);
+  });
+  stage.addEventListener('pointermove', e => {
+    if (!isDragging) return;
+    const dx = e.clientX - lastX, dy = e.clientY - lastY;
+    lastX = e.clientX; lastY = e.clientY;
+    targetRotY += dx * 0.008;
+    targetRotX += dy * 0.008;
+    targetRotX = Math.max(-Math.PI / 2 + 0.1, Math.min(Math.PI / 2 - 0.1, targetRotX));
+  });
+  stage.addEventListener('pointerup', () => { isDragging = false; });
+  stage.addEventListener('pointercancel', () => { isDragging = false; });
+  stage.addEventListener('wheel', e => {
+    e.preventDefault();
+    targetDist *= (e.deltaY > 0 ? 1.08 : 0.92);
+    targetDist = Math.max(2, Math.min(30, targetDist));
+  }, { passive: false });
+}
+
+function updateCamera() {
+  rotX += (targetRotX - rotX) * 0.12;
+  rotY += (targetRotY - rotY) * 0.12;
+  cameraDist += (targetDist - cameraDist) * 0.12;
+  const x = cameraDist * Math.cos(rotX) * Math.sin(rotY);
+  const y = cameraDist * Math.sin(rotX);
+  const z = cameraDist * Math.cos(rotX) * Math.cos(rotY);
+  camera.position.set(x, y, z);
+  camera.lookAt(0, 0, 0);
+}
+
+function resize() {
+  const w = stage.clientWidth;
+  const h = stage.clientHeight;
+  renderer.setSize(w, h, false);
+  camera.aspect = w / h;
+  camera.updateProjectionMatrix();
+  if (composer) composer.setSize(w, h);
+  if (bloomPass) bloomPass.setSize(w, h);
+}
+window.addEventListener('resize', resize);
+
+let renderPaused = false;
+function animate() {
+  requestAnimationFrame(animate);
+  if (renderPaused) return;
+  updateCamera();
+  if (composer) composer.render();
+  else renderer.render(scene, camera);
+}
+
+// =================================================================
+// UI
+// =================================================================
+function bindUI() {
+  // ===== Theme toggle (light / dark) =====
+  // Flips data-theme on <html>. All UI colors are token-driven so the
+  // whole interface retints in one frame. Independent from the 3D
+  // scene's background (which has its own Light/Dark/None toggle).
+  const themeBtn = document.getElementById('themeBtn');
+  themeBtn.addEventListener('click', () => {
+    const html = document.documentElement;
+    const next = html.getAttribute('data-theme') === 'dark' ? 'light' : 'dark';
+    if (next === 'light') {
+      html.removeAttribute('data-theme');
+    } else {
+      html.setAttribute('data-theme', 'dark');
+    }
+  });
+
+  // ===== Light-direction dial =====
+  // Drag the puck around the circle's perimeter to set state.lightAngle
+  // (degrees, 0–360). Rebuilds the PMREM environment on change. PMREM
+  // is expensive (~5-15ms on M-series, more on integrated GPUs), so
+  // env rebuilds are throttled to ~30 fps while dragging via rAF.
+  const dial = document.getElementById('lightDial');
+  const puck = document.getElementById('lightDialPuck');
+  const angleVal = document.getElementById('valLightAngle');
+
+  // Visual radius the puck travels on. Slightly inside the track edge
+  // so the puck sits ON the circle rather than overhanging it.
+  const puckRadius = 30;
+  let envRebuildPending = false;
+
+  function renderPuck(angleDeg) {
+    // SVG-style angle: 0° = 3 o'clock (right), increases clockwise as we
+    // go down. Standard math: x = cos(θ), y = sin(θ).
+    const r = angleDeg * Math.PI / 180;
+    const x = Math.cos(r) * puckRadius;
+    const y = Math.sin(r) * puckRadius;
+    puck.style.transform = `translate(${x}px, ${y}px)`;
+    angleVal.textContent = `${Math.round(((angleDeg % 360) + 360) % 360)}°`;
+  }
+
+  function scheduleEnvRebuild() {
+    if (envRebuildPending) return;
+    envRebuildPending = true;
+    requestAnimationFrame(() => {
+      envRebuildPending = false;
+      rebuildEnvironment();
+    });
+  }
+
+  let dragging = false;
+  function updateFromPointer(clientX, clientY) {
+    const rect = dial.getBoundingClientRect();
+    const cx = rect.left + rect.width / 2;
+    const cy = rect.top + rect.height / 2;
+    const dx = clientX - cx;
+    const dy = clientY - cy;
+    // atan2 returns radians in (-π, π]. Convert to 0–360 degrees,
+    // clockwise from positive X (3 o'clock).
+    let deg = Math.atan2(dy, dx) * 180 / Math.PI;
+    if (deg < 0) deg += 360;
+    state.lightAngle = deg;
+    renderPuck(deg);
+    scheduleEnvRebuild();
+  }
+
+  dial.addEventListener('pointerdown', e => {
+    dragging = true;
+    dial.setPointerCapture(e.pointerId);
+    updateFromPointer(e.clientX, e.clientY);
+  });
+  dial.addEventListener('pointermove', e => {
+    if (!dragging) return;
+    updateFromPointer(e.clientX, e.clientY);
+  });
+  const endDrag = e => {
+    if (!dragging) return;
+    dragging = false;
+    try { dial.releasePointerCapture(e.pointerId); } catch {}
+  };
+  dial.addEventListener('pointerup', endDrag);
+  dial.addEventListener('pointercancel', endDrag);
+
+  // Initial puck placement reflects the default state.lightAngle.
+  renderPuck(state.lightAngle);
+
+  const shapeBtns = document.querySelectorAll('#shapeGrid .opt');
+  const shapeLabels = document.querySelectorAll('#shapeLabels span');
+  shapeBtns.forEach((btn, i) => {
+    btn.addEventListener('click', () => {
+      shapeBtns.forEach(b => b.classList.remove('active'));
+      shapeLabels.forEach(l => l.classList.remove('active'));
+      btn.classList.add('active');
+      shapeLabels[i].classList.add('active');
+      state.shape = btn.dataset.shape;
+      document.getElementById('statShape').textContent = shapeLabels[i].textContent.toLowerCase();
+      rebuild();
+    });
+  });
+  const compBtns = document.querySelectorAll('#compGrid .opt');
+  const compLabels = document.querySelectorAll('#compLabels span');
+  compBtns.forEach((btn, i) => {
+    btn.addEventListener('click', () => {
+      compBtns.forEach(b => b.classList.remove('active'));
+      compLabels.forEach(l => l.classList.remove('active'));
+      btn.classList.add('active');
+      compLabels[i].classList.add('active');
+      state.comp = btn.dataset.comp;
+      document.getElementById('statForm').textContent = compLabels[i].textContent.toLowerCase();
+
+      // ---- Apply composition preset (if defined) ----
+      // Each composition can have its own hand-tuned starting values
+      // (see COMP_DEFAULTS at the top of this script). When the user
+      // picks a comp that has a preset, copy those values into state
+      // and sync the slider knobs + labels. If no preset is defined,
+      // fall back to the auto-safe-spacing heuristic so plates still
+      // don't clip on the new layout. Ring is excluded from both paths
+      // — it keeps whatever spacing is already set (default 1.20).
+      const preset = COMP_DEFAULTS[state.comp];
+      if (preset) {
+        applyCompPreset(preset);
+      } else if (state.comp !== 'ring') {
+        const safe = getMinSafeSpacing(state);
+        if (safe > state.spacing) {
+          const sliderVal = Math.max(20, Math.min(250, Math.round(safe * 100)));
+          document.getElementById('spacing').value = sliderVal;
+          state.spacing = sliderVal / 100;
+          document.getElementById('valSpacing').textContent = state.spacing.toFixed(2);
+        }
+      }
+
+      cameraInitialized = false;
+      rebuild();
+    });
+  });
+  document.querySelectorAll('.style-opt').forEach(b => {
+    b.addEventListener('click', () => {
+      document.querySelectorAll('.style-opt').forEach(x => x.classList.remove('active'));
+      b.classList.add('active');
+      state.matStyle = b.dataset.style;
+      rebuildMaterials();
+      rebuild();  // need to rebuild meshes to add/remove cores
+    });
+  });
+
+  bindSlider('count', v => parseInt(v), 'valCount', v => v, 'statCount', v => v);
+  bindSlider('twist', v => parseFloat(v) / 100, 'valTwist', v => v.toFixed(1));
+  bindSlider('taper', v => parseFloat(v) / 100, 'valTaper', v => v.toFixed(2));
+  bindSlider('spacing', v => parseFloat(v) / 100, 'valSpacing', v => v.toFixed(2));
+  bindSlider('thick', v => parseFloat(v) / 100, 'valThick', v => v.toFixed(2), null, null, { rebuildGeo: true });
+  bindSlider('sat', v => parseFloat(v) / 100, 'valSat', v => v.toFixed(2), null, null, { matLive: true });
+  bindSlider('ior', v => parseFloat(v) / 100, 'valIor', v => v.toFixed(2), null, null, { matLive: true });
+  bindSlider('polish', v => parseFloat(v) / 100, 'valPolish', v => v.toFixed(2), null, null, { matLive: true });
+  bindSlider('bloom', v => parseFloat(v) / 100, 'valBloom', v => v.toFixed(2), null, null, { bloomOnly: true });
+  bindSlider('exp', v => parseFloat(v) / 100, 'valExp', v => v.toFixed(2), null, null, { expo: true });
+
+  const colorInput = document.getElementById('color');
+  const colorSwatch = document.getElementById('colorSwatch');
+  colorSwatch.style.background = state.color;
+  // Mark the matching preset as active on load
+  document.querySelectorAll('#presetRow .preset').forEach(p => {
+    if (p.dataset.color.toLowerCase() === state.color.toLowerCase()) {
+      p.classList.add('active');
+    }
+  });
+  const colorHandler = e => {
+    state.color = e.target.value;
+    colorSwatch.style.background = state.color;
+    document.querySelectorAll('#presetRow .preset').forEach(p => p.classList.remove('active'));
+    updateMaterialsLive();
+  };
+  colorInput.addEventListener('input', colorHandler);
+  colorInput.addEventListener('change', colorHandler);
+  document.querySelectorAll('#presetRow .preset').forEach(p => {
+    p.addEventListener('click', () => {
+      const c = p.dataset.color;
+      state.color = c;
+      colorInput.value = c;
+      colorSwatch.style.background = c;
+      document.querySelectorAll('#presetRow .preset').forEach(x => x.classList.remove('active'));
+      p.classList.add('active');
+      updateMaterialsLive();
+    });
+  });
+  document.querySelectorAll('.bg-opt').forEach(b => {
+    b.addEventListener('click', () => {
+      document.querySelectorAll('.bg-opt').forEach(x => x.classList.remove('active'));
+      b.classList.add('active');
+      state.background = b.dataset.bg;
+      setBackground(state.background);
+    });
+  });
+  document.getElementById('randomBtn').addEventListener('click', randomize);
+  // ---- Export dropdown wiring ----
+  const exportBtn = document.getElementById('exportBtn');
+  const exportWrap = exportBtn.parentElement;
+  const exportMenu = document.getElementById('exportMenu');
+  const exportLabel = document.getElementById('exportLabel');
+  // Track currently-selected export resolution. Defaults to 4K.
+  let exportResolution = { w: 3840, h: 2160, label: '4K' };
+
+  exportBtn.addEventListener('click', e => {
+    // If the click landed on the chevron (right ~16px), open menu.
+    // Otherwise export immediately at the current resolution.
+    const rect = exportBtn.getBoundingClientRect();
+    const isChevron = (e.clientX - rect.left) > rect.width - 26;
+    if (isChevron) {
+      exportWrap.classList.toggle('open');
+    } else {
+      exportWrap.classList.remove('open');
+      exportPNG({ width: exportResolution.w, height: exportResolution.h });
+    }
+  });
+
+  // Close dropdown when clicking outside it
+  document.addEventListener('click', e => {
+    if (!exportWrap.contains(e.target)) {
+      exportWrap.classList.remove('open');
+    }
+  });
+
+  // Each menu button: select that resolution, update label, export
+  exportMenu.querySelectorAll('button').forEach(b => {
+    b.addEventListener('click', () => {
+      exportResolution = {
+        w: parseInt(b.dataset.w, 10),
+        h: parseInt(b.dataset.h, 10),
+        label: b.dataset.label,
+      };
+      exportMenu.querySelectorAll('button').forEach(x => x.classList.remove('active'));
+      b.classList.add('active');
+      exportLabel.textContent = exportResolution.label;
+      exportWrap.classList.remove('open');
+      exportPNG({ width: exportResolution.w, height: exportResolution.h });
+    });
+  });
+}
+
+function bindSlider(id, parse, valId, format, statId, statFmt, opts = {}) {
+  const el = document.getElementById(id);
+  const valEl = document.getElementById(valId);
+  const keyMap = {
+    count: 'count', twist: 'twist', taper: 'taper', spacing: 'spacing',
+    thick: 'thickness', sat: 'saturation', ior: 'ior', polish: 'polish',
+    bloom: 'bloom', exp: 'exposure'
+  };
+  el.addEventListener('input', e => {
+    const v = parse(e.target.value);
+    valEl.textContent = format(v);
+    state[keyMap[id]] = v;
+    if (statId) document.getElementById(statId).textContent = statFmt(v);
+    if (opts.expo) {
+      renderer.toneMappingExposure = v;
+    } else if (opts.bloomOnly) {
+      if (bloomPass) bloomPass.strength = v;
+    } else if (opts.rebuildGeo) {
+      clearGeometryCache();
+      rebuild();
+    } else if (opts.matLive) {
+      updateMaterialsLive();
+    } else {
+      rebuild();
+    }
+  });
+}
+
+// =================================================================
+// APPLY COMPOSITION PRESET — copies a preset object onto state, then
+// syncs each affected slider's knob position and numeric label so the
+// UI matches what's in state. Triggers material/geometry rebuilds only
+// for the fields that need them (thickness clears the geometry cache,
+// the rest are pure layout params handled by the outer rebuild()).
+// =================================================================
+function applyCompPreset(preset) {
+  // Map state-field name -> the slider DOM IDs ({slider, value-label}).
+  // Mirrors bindSlider's keyMap but in the other direction.
+  const fieldSliderMap = {
+    count:     { id: 'count',   valId: 'valCount',   integer: true, statId: 'statCount' },
+    twist:     { id: 'twist',   valId: 'valTwist',   format: v => v.toFixed(1) },
+    taper:     { id: 'taper',   valId: 'valTaper',   format: v => v.toFixed(2) },
+    spacing:   { id: 'spacing', valId: 'valSpacing', format: v => v.toFixed(2) },
+    thickness: { id: 'thick',   valId: 'valThick',   format: v => v.toFixed(2), rebuildGeo: true },
+  };
+  let needsGeoRebuild = false;
+  for (const [field, val] of Object.entries(preset)) {
+    state[field] = val;
+    const map = fieldSliderMap[field];
+    if (!map) continue;
+    const slider = document.getElementById(map.id);
+    if (slider) {
+      // Slider stores integers (×100 for floats, raw for count)
+      slider.value = map.integer ? val : Math.round(val * 100);
+    }
+    const valEl = document.getElementById(map.valId);
+    if (valEl) {
+      valEl.textContent = map.integer ? String(val) : map.format(val);
+    }
+    if (map.statId) {
+      const statEl = document.getElementById(map.statId);
+      if (statEl) statEl.textContent = String(val);
+    }
+    if (map.rebuildGeo) needsGeoRebuild = true;
+  }
+  if (needsGeoRebuild) {
+    clearGeometryCache();
+  }
+}
+
+function randomize() {
+  const shapes = ['disc', 'roundedRect', 'rect', 'square', 'roundedSquare'];
+  const comps = ['tower', 'scatter', 'grid', 'ring'];
+  state.shape = shapes[Math.floor(Math.random() * shapes.length)];
+  state.comp = comps[Math.floor(Math.random() * comps.length)];
+  state.count = 8 + Math.floor(Math.random() * 20);
+  state.twist = Math.random() * 3;
+  state.taper = Math.random() * 0.5;
+  state.spacing = 0.5 + Math.random() * 1.0;
+  state.seed = Math.random() * 1000;
+  document.querySelectorAll('#shapeGrid .opt').forEach((b, i) => {
+    b.classList.toggle('active', b.dataset.shape === state.shape);
+    document.querySelectorAll('#shapeLabels span')[i].classList.toggle('active', b.dataset.shape === state.shape);
+  });
+  document.querySelectorAll('#compGrid .opt').forEach((b, i) => {
+    b.classList.toggle('active', b.dataset.comp === state.comp);
+    document.querySelectorAll('#compLabels span')[i].classList.toggle('active', b.dataset.comp === state.comp);
+  });
+  document.getElementById('count').value = state.count;
+  document.getElementById('valCount').textContent = state.count;
+  document.getElementById('statCount').textContent = state.count;
+  document.getElementById('twist').value = Math.round(state.twist * 100);
+  document.getElementById('valTwist').textContent = state.twist.toFixed(1);
+  document.getElementById('taper').value = Math.round(state.taper * 100);
+  document.getElementById('valTaper').textContent = state.taper.toFixed(2);
+  document.getElementById('spacing').value = Math.round(state.spacing * 100);
+  document.getElementById('valSpacing').textContent = state.spacing.toFixed(2);
+  const shapeLabelEl = document.querySelector('#shapeGrid .opt.active');
+  if (shapeLabelEl) {
+    const idx = Array.from(document.querySelectorAll('#shapeGrid .opt')).indexOf(shapeLabelEl);
+    document.getElementById('statShape').textContent = document.querySelectorAll('#shapeLabels span')[idx].textContent.toLowerCase();
+  }
+  document.getElementById('statForm').textContent = state.comp;
+  cameraInitialized = false;
+  rebuild();
+}
+
+function exportPNG(opts = {}) {
+  // ---- Export resolution. Defaults to 4K landscape; can be overridden. ----
+  const targetW = opts.width  || 3840;
+  const targetH = opts.height || 2160;
+
+  // ---- Save current renderer/canvas state so we can restore after ----
+  const oldPixelRatio   = renderer.getPixelRatio();
+  const oldSize         = renderer.getSize(new THREE.Vector2());
+  const oldAspect       = camera.aspect;
+  const oldCanvasW      = canvas.width;
+  const oldCanvasH      = canvas.height;
+  const oldStyleW       = canvas.style.width;
+  const oldStyleH       = canvas.style.height;
+  const oldAutoClear    = renderer.autoClear;
+
+  try {
+    // Pause the live animation loop so it can't overwrite the canvas
+    // between our high-res render and the async toBlob read.
+    renderPaused = true;
+
+    // ---- Resize drawing buffer to the target resolution ----
+    // setPixelRatio(1) so width/height map 1:1 to actual buffer pixels.
+    // The `false` updateStyle flag keeps the on-screen CSS size unchanged
+    // (we restore it explicitly below).
+    renderer.setPixelRatio(1);
+    renderer.setSize(targetW, targetH, false);
+    if (composer) composer.setSize(targetW, targetH);
+    if (bloomPass) bloomPass.setSize(targetW, targetH);
+
+    // ---- Re-aim the camera for the new aspect ratio ----
+    // Without this, a 16:9 export of a viewport that was 4:3 would crop.
+    camera.aspect = targetW / targetH;
+    camera.updateProjectionMatrix();
+
+    // Refit camera distance so the composition fills the frame at the
+    // export aspect, leaving a comfortable margin.
+    const box = new THREE.Box3().setFromObject(group);
+    if (!box.isEmpty()) {
+      const sphere = box.getBoundingSphere(new THREE.Sphere());
+      const radius = sphere.radius || 2;
+      const fov = camera.fov * Math.PI / 180;
+      // Use the smaller axis (vertical for landscape, horizontal for portrait)
+      // so the composition is fully visible regardless of orientation.
+      const vDist = radius / Math.sin(fov / 2);
+      const hDist = radius / Math.sin(Math.atan(Math.tan(fov / 2) * camera.aspect));
+      const fitDist = Math.max(vDist, hDist) * 0.95;
+      // Preserve the current orbit angles, but use the fitted distance.
+      const x = fitDist * Math.cos(rotX) * Math.sin(rotY);
+      const y = fitDist * Math.sin(rotX);
+      const z = fitDist * Math.cos(rotX) * Math.cos(rotY);
+      camera.position.set(x, y, z);
+      camera.lookAt(0, 0, 0);
+    }
+
+    // ---- Render the high-res frame ----
+    renderer.autoClear = true;
+    if (composer) composer.render();
+    else renderer.render(scene, camera);
+
+    // ---- Capture the drawing buffer ----
+    // Doing this synchronously after render avoids any preserveDrawingBuffer
+    // edge cases on some drivers. toBlob is async but canvas content
+    // is guaranteed valid until the next render.
+    canvas.toBlob(blob => {
+      if (!blob) {
+        console.error('Export: toBlob returned null');
+        restore();
+        return;
+      }
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      const sizeTag = `${targetW}x${targetH}`;
+      a.download = `glass-${state.shape}-${state.comp}-${sizeTag}-${Date.now()}.png`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      // Defer revoke so the browser has time to start the download
+      setTimeout(() => URL.revokeObjectURL(url), 1000);
+      restore();
+    }, 'image/png', 1.0);
+  } catch (err) {
+    console.error('Export failed:', err);
+    restore();
+  }
+
+  function restore() {
+    // ---- Restore everything to the pre-export state ----
+    renderer.setPixelRatio(oldPixelRatio);
+    renderer.setSize(oldSize.x, oldSize.y, false);
+    canvas.style.width = oldStyleW;
+    canvas.style.height = oldStyleH;
+    if (composer) composer.setSize(oldSize.x, oldSize.y);
+    if (bloomPass) bloomPass.setSize(oldSize.x, oldSize.y);
+    camera.aspect = oldAspect;
+    camera.updateProjectionMatrix();
+    renderer.autoClear = oldAutoClear;
+    // Force the live camera update loop to refit using the live viewport
+    cameraDist = camera.position.length();
+    targetDist = cameraDist;
+    // Resume the animation loop
+    renderPaused = false;
+  }
+}
+
+window.__glassInit = init;
+if (window.__threeReady) init();
+</script>
+</body>
+</html>
